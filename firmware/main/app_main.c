@@ -1,67 +1,69 @@
-#include <stdio.h>
-#include <string.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "driver/uart.h"
-#include "esp_log.h"
+#include <stdio.h>          // 标准输入输出库，提供 printf、fgets 等函数
+#include <string.h>         // 字符串处理库，提供 strlen、strncmp 等
+#include "freertos/FreeRTOS.h"  // FreeRTOS 操作系统核心头文件（ESP32 自带的小型操作系统）
+#include "freertos/task.h"      // FreeRTOS 任务管理，提供 vTaskDelay 等函数
+#include "esp_log.h"            // ESP32 日志打印头文件
 
 // ========== 配置 ==========
-#define UART_NUM        UART_NUM_0      // 用 UART0（USB 串口）
-#define BUF_SIZE        1024            // 接收缓冲区
+#define BUF_SIZE        128             // 输入缓冲区大小（字节）
 #define TAG             "IOT_TEST"      // 日志标签
 
-// ========== 函数：初始化串口 ==========
-static void uart_init(void) {
-    uart_config_t uart_config = {
-        .baud_rate = 115200,
-        .data_bits = UART_DATA_8_BITS,
-        .parity    = UART_PARITY_DISABLE,
-        .stop_bits = UART_STOP_BITS_1,
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-    };
-
-    // 配置串口参数
-    uart_param_config(UART_NUM, &uart_config);
-    
-    // 安装驱动（不指定引脚，用默认的 TX=GPIO1, RX=GPIO3）
-    uart_driver_install(UART_NUM, BUF_SIZE * 2, 0, 0, NULL, 0);
-}
-
-// ========== 函数：发送回复 ==========
-static void send_response(const char *data) {
-    uart_write_bytes(UART_NUM, data, strlen(data));
-    ESP_LOGI(TAG, "发送: %s", data);
+// ========== 函数：去掉行尾的 \r 和 \n ==========
+// fgets 会保留换行符，但不同终端发送的换行符不同（\n、\r\n、\r）
+// 这个函数从字符串末尾把换行符全部抹掉，方便后面比较
+static void strip_newline(char *str) {
+    int len = strlen(str);                    // 获取字符串长度
+    while (len > 0 && (str[len-1] == '\r' || str[len-1] == '\n')) {
+        str[len-1] = '\0';                    // 把换行符替换成结束符
+        len--;
+    }
 }
 
 // ========== 主任务：读取并处理 AT 指令 ==========
 static void uart_task(void *pvParameters) {
-    uint8_t data[BUF_SIZE];
-    char rx_buffer[128];   // 累积收到的字符串
-    int rx_len = 0;
+    char line[BUF_SIZE];  // 存放从串口读到的一行输入
+
+    ESP_LOGI(TAG, "等待指令...");  // 只打印一次
 
     while (1) {
-        // 读取串口数据（阻塞，最多等 100ms）
-        int len = uart_read_bytes(UART_NUM, data, BUF_SIZE - 1, 100 / portTICK_PERIOD_MS);
+        // fgets: 从标准输入（stdin）读一行，阻塞等待用户输入
+        if (fgets(line, sizeof(line), stdin) == NULL) {
+            // 没读到数据时让出 CPU，避免看门狗超时
+            vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
+        }
 
-        if (len > 0) {
-            data[len] = '\0';  // 加结束符，方便当字符串处理
-            ESP_LOGI(TAG, "收到: %s", data);
+        // 去掉行尾的 \r\n
+        strip_newline(line);
 
-            // 简单处理：把收到的内容追加到缓冲区
-            // 实际应该做帧边界检测（等 \r\n），这里简化
-            if (strncmp((char *)data, "AT\r\n", 4) == 0) {
-                send_response("OK\r\n");
-            }
-            else if (strncmp((char *)data, "AT+INFO\r\n", 9) == 0) {
-                char info[64];
-                snprintf(info, sizeof(info), 
-                         "DEVICE:ESP32,FW:v1.0,UPTIME:%lu\r\n", 
-                         (unsigned long)(xTaskGetTickCount() / 100));
-                send_response(info);
-            }
-            else if (strncmp((char *)data, "AT+", 3) == 0) {
-                send_response("ERROR:UNKNOWN_CMD\r\n");
-            }
+        // 跳过空行（用户只按了回车）
+        if (strlen(line) == 0) {
+            continue;
+        }
+
+        ESP_LOGI(TAG, "收到: %s", line);
+
+        // ----- AT 指令匹配 -----
+
+        // AT：基本测试指令
+        if (strcmp(line, "AT") == 0) {
+            printf("OK\r\n");
+            ESP_LOGI(TAG, "发送: OK");
+        }
+        // AT+INFO：查询设备信息
+        else if (strcmp(line, "AT+INFO") == 0) {
+            printf("DEVICE:ESP32,FW:v1.0,UPTIME:%lu\r\n",
+                   (unsigned long)(xTaskGetTickCount() * portTICK_PERIOD_MS / 1000));
+            ESP_LOGI(TAG, "发送: 设备信息");
+        }
+        // AT+ 开头的其他未知指令
+        else if (strncmp(line, "AT+", 3) == 0) {
+            printf("ERROR:UNKNOWN_CMD\r\n");
+            ESP_LOGI(TAG, "发送: ERROR");
+        }
+        // 不以 AT 开头：忽略
+        else {
+            ESP_LOGI(TAG, "忽略: 非AT指令");
         }
     }
 }
@@ -69,9 +71,8 @@ static void uart_task(void *pvParameters) {
 // ========== 程序入口 ==========
 void app_main(void) {
     ESP_LOGI(TAG, "IoT Testing Platform 启动");
+    ESP_LOGI(TAG, "输入 AT 或 AT+INFO 并回车，Ctrl+] 退出");
 
-    uart_init();
-
-    // 创建串口处理任务
-    xTaskCreate(uart_task, "uart_task", 2048, NULL, 10, NULL);
+    // 不需要 uart_init，stdin/stdout 已由 ESP-IDF 自动初始化，直接开始监听
+    xTaskCreate(uart_task, "uart_task", 4096, NULL, 5, NULL);
 }
