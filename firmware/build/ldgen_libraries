@@ -160,3 +160,4 @@ D:/0aiflod/iot-testing-platform/firmware/build/esp-idf/spiffs/libspiffs.a
 D:/0aiflod/iot-testing-platform/firmware/build/esp-idf/wifi_provisioning/libwifi_provisioning.a
 D:/0aiflod/iot-testing-platform/firmware/build/esp-idf/json/libjson.a
 D:/0aiflod/iot-testing-platform/firmware/build/esp-idf/main/libmain.a
+D:/0aiflod/iot-testing-platform/firmware/build/esp-idf/mqtt/libmqtt.a

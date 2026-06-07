@@ -66,3 +66,56 @@ def test_at_status(serial_port):
     assert 40.0 <= hum <= 70.0,  f"❌ 湿度异常: {hum}%"
 
     print(f"\n   ✅ 温度={temp}°C, 湿度={hum}%")
+
+
+# ═══════════════════════════════════════════════════════
+# 测试 4：未知指令 — 断言回复 ERROR
+# ═══════════════════════════════════════════════════════
+def test_invalid_command(serial_port):
+    """发 AT+FOO（固件不认识的指令），断言回复 ERROR"""
+    reply = send_at(serial_port, "AT+FOO")
+
+    assert "ERROR" in reply, (
+        f"❌ 未知指令应回复 ERROR\n"
+        f"   实际收到:\n{reply}"
+    )
+
+
+# ═══════════════════════════════════════════════════════
+# 测试 5：空指令 — 断言固件不崩溃，能继续响应
+# ═══════════════════════════════════════════════════════
+def test_empty_command(serial_port):
+    """发空行，断言固件不崩溃，之后仍能正常响应 AT"""
+    # 连发 3 次空行
+    for _ in range(3):
+        send_at(serial_port, "")
+
+    # 再发一条正常 AT，确认固件还活着
+    reply = send_at(serial_port, "AT")
+    assert "OK" in reply, (
+        f"❌ 发空行后固件应仍能正常响应 AT\n"
+        f"   实际收到:\n{reply}"
+    )
+
+
+# ═══════════════════════════════════════════════════════
+# 测试 6：乱码 — 断言固件不崩溃，能继续响应
+# ═══════════════════════════════════════════════════════
+def test_no_response_garbage(serial_port):
+    """发乱码，断言固件不卡死不崩溃，之后仍能响应正常指令"""
+    # 模拟各种可能的乱码输入
+    garbage_inputs = [
+        "\x00\x01\x02",     # 不可打印的控制字符
+        "??????",           # 无意义的符号串
+        "AT\rAT\r\n",       # 畸形的指令拼接
+    ]
+
+    for junk in garbage_inputs:
+        send_at(serial_port, junk)
+
+    # 发正常 AT 确认固件还活着
+    reply = send_at(serial_port, "AT")
+    assert "OK" in reply, (
+        f"❌ 发乱码后固件应仍能正常响应 AT\n"
+        f"   实际收到:\n{reply}"
+    )
