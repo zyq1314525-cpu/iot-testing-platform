@@ -1,7 +1,7 @@
 {
     "version":            "1.2",
     "project_name":       "iot-testing-platform",
-    "project_version":    "7098c4b-dirty",
+    "project_version":    "3b30c91-dirty",
     "project_path":       "D:/0aiflod/iot-testing-platform/firmware",
     "idf_path":           "C:/Espressif/frameworks/esp-idf-v5.5.4",
     "build_dir":          "D:/0aiflod/iot-testing-platform/firmware/build",

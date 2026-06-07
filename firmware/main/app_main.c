@@ -3,6 +3,7 @@
 #include "freertos/FreeRTOS.h"  // FreeRTOS 操作系统核心头文件（ESP32 自带的小型操作系统）
 #include "freertos/task.h"      // FreeRTOS 任务管理，提供 vTaskDelay 等函数
 #include "esp_log.h"            // ESP32 日志打印头文件
+#include "esp_random.h"         // ESP32 硬件随机数生成器
 
 // ========== 配置 ==========
 #define BUF_SIZE        128             // 输入缓冲区大小（字节）
@@ -55,6 +56,13 @@ static void uart_task(void *pvParameters) {
             printf("DEVICE:ESP32,FW:v1.0,UPTIME:%lu\r\n",
                    (unsigned long)(xTaskGetTickCount() * portTICK_PERIOD_MS / 1000));
             ESP_LOGI(TAG, "发送: 设备信息");
+        }
+        // AT+STATUS：查询传感器数据（模拟温湿度读数）
+        else if (strcmp(line, "AT+STATUS") == 0) {
+            float temp = 25.0f + (esp_random() % 100) / 10.0f;  // 25.0 ~ 34.9
+            float hum  = 50.0f + (esp_random() % 100) / 10.0f;  // 50.0 ~ 59.9
+            printf("+STATUS:T=%.1f,H=%.1f\r\n", temp, hum);
+            ESP_LOGI(TAG, "发送: STATUS T=%.1f H=%.1f", temp, hum);
         }
         // AT+ 开头的其他未知指令
         else if (strncmp(line, "AT+", 3) == 0) {
