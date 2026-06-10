@@ -26,7 +26,7 @@ def on_message(client, userdata, msg):
 
 
 client = mqtt.Client()
-client.on_connect = on_connect
+client.on_connect = on_connect   #函数引用 vs 函数调用,把函数本身交给 client，让它以后自动填参数帮你调用,模式叫回调（callback）
 client.on_message = on_message
 
 print(f"正在连接 {BROKER}:{PORT} ...")
