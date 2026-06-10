@@ -68,22 +68,13 @@ def test_device_online(mqtt_client):
         - status 字段为 "online"
         - 整体为合法 JSON
     """
-    # ① 清空收件箱中可能残留的旧消息
+    # ① 清空旧消息
     mqtt_client.drain()
 
-    # ② 发送 RESET 指令，触发设备重连
-    #    模拟器收到 RESET → disconnect → reconnect → publish 上线消息
-    #    真实固件收到 RESET → 回复 ACK（会被第③步 drain 掉）
+    # ② 发 RESET → 模拟器立即重新发布上线消息 → 直接等待接收
+    #    注意: 不在这里 drain，否则会把刚收到的上线消息清掉
     mqtt_client.publish_cmd("RESET")
-    time.sleep(0.5)
-
-    # ③ 排掉 RESET 指令的 ACK 回复（真实固件会产生，模拟器不会）
-    mqtt_client.drain()
-
-    # ④ 等待上线消息
-    #    CI 模拟器: 重连约需 2-3s
-    #    真实固件: 如不支持 RESET 则会超时
-    raw = mqtt_client.wait_reply(timeout=15.0)
+    raw = mqtt_client.wait_reply(timeout=5.0)
     assert raw is not None, (
         "❌ 超时: 发 RESET 后 15s 内未收到上线消息。\n"
         "   CI 环境: 检查模拟器是否在后台运行（python device_simulator/mqtt_simulator.py &）\n"
