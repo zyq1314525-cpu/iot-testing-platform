@@ -40,17 +40,18 @@ def find_esp32_port():
     return None
 
 
-# 优先级：环境变量 ESP32_PORT > 自动扫描
-ESP32_PORT = os.environ.get("ESP32_PORT") or find_esp32_port()
+# CI 模式检测（GitHub Actions 自动设置 CI=true）
+IN_CI = os.environ.get("CI", "").lower() == "true"
+
+# 优先级：环境变量 ESP32_PORT > 自动扫描（CI 环境跳过扫描，肯定没有串口）
+ESP32_PORT = os.environ.get("ESP32_PORT")
+if ESP32_PORT is None and not IN_CI:
+    ESP32_PORT = find_esp32_port()
 
 if ESP32_PORT is None:
-    raise RuntimeError(
-        "❌ 没找到 ESP32 串口。\n"
-        "   请确认 ESP32 已插上，设备管理器里有 COM 口。\n"
-        "   或手动指定: set ESP32_PORT=COM8 && pytest tests/ -v"
-    )
-
-print(f"\n🔌 ESP32 串口: {ESP32_PORT}")
+    print("\n⚠️  未找到 ESP32 串口 — 串口测试将跳过（CI 模式或未连接硬件）")
+else:
+    print(f"\n🔌 ESP32 串口: {ESP32_PORT}")
 
 
 # ========== 串口辅助 ==========
@@ -66,7 +67,10 @@ def send_at(ser, cmd, wait=0.3):
 
 @pytest.fixture(scope="function")
 def serial_port():
-    """串口 fixture — 每次测试前打开串口，测完自动关闭。"""
+    """串口 fixture — 每次测试前打开串口，测完自动关闭。无硬件时自动 skip。"""
+    if ESP32_PORT is None:
+        pytest.skip("未找到 ESP32 串口（CI 模式或未连接硬件）")
+
     ser = serial.Serial(
         port=ESP32_PORT,
         baudrate=BAUDRATE,
@@ -141,7 +145,7 @@ def mqtt_client():
     """
     MQTT fixture — 连公共 broker，测完自动断开。
 
-    前提：ESP32 已连 WiFi 并运行 MQTT。
+    前提：ESP32 已连 WiFi 并运行 MQTT（或 CI 中运行模拟器）。
     """
     helper = MqttHelper()
     helper.drain()
@@ -149,3 +153,22 @@ def mqtt_client():
     yield helper
 
     helper.close()
+
+
+# ========== 测试执行顺序 ==========
+
+def pytest_collection_modifyitems(items):
+    """
+    调整测试执行顺序：test_offline 必须最后跑（CI 中它会杀掉模拟器进程）。
+    同时串口测试放前面、MQTT 测试放后面（硬件测试优先，出问题早暴露）。
+    """
+    def sort_key(item):
+        # test_offline 排最后（它会导致模拟器退出）
+        if item.name == "test_offline":
+            return 2
+        # MQTT 协议测试排中间
+        if "mqtt" in item.nodeid:
+            return 1
+        # 串口测试排最前
+        return 0
+    items.sort(key=sort_key)

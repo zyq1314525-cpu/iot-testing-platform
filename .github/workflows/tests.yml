@@ -1,0 +1,52 @@
+name: MQTT Protocol Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # 允许手动触发（Actions 页面点 Run workflow）
+  workflow_dispatch:
+
+jobs:
+  mqtt-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ① 拉代码
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ② 装 Python
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # ③ 装依赖（pyserial 是 conftest.py 的硬 import，即使 CI 不连硬件也需要）
+      - name: Install dependencies
+        run: pip install paho-mqtt pytest pyserial
+
+      # ④ 启动 MQTT 设备模拟器（后台）
+      - name: Start device simulator
+        run: |
+          python device_simulator/mqtt_simulator.py &
+          # 等模拟器连上 broker + 发完上线消息
+          sleep 5
+          echo "✅ 模拟器已启动"
+
+      # ⑤ 跑 MQTT 协议测试
+      - name: Run MQTT protocol tests
+        run: pytest tests/test_mqtt_protocol.py -v
+        env:
+          CI: "true"
+
+      # ⑥ （可选）上传测试报告
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-results
+          path: |
+            .pytest_cache/
+          retention-days: 7
